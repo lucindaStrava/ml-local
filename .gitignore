@@ -1,0 +1,11 @@
+.ipynb_checkpoints/
+.DS_Store
+.idea/
+env/
+logs/
+models/
+result/
+snapshots/
+testData/
+trainData/
+validationData/

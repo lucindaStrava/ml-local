@@ -1,0 +1,15 @@
+sklearn
+pandas
+numpy
+scikit-plot
+matplotlib
+graphviz
+pyarrow
+
+tensorflow==2.1.0
+# keras
+xgboost
+#horovod
+
+ipython
+jupyter
