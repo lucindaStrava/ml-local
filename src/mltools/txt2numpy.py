@@ -3,11 +3,14 @@ import pyarrow.parquet as pq
 import pandas as pd
 from keras.utils.np_utils import to_categorical
 
+from keras.preprocessing import sequence
+
 
 class TextConverter(object):
     def __init__(self, directory_or_fileiter, ycolumns, xcolumns,
                  shuffle=True, skip_header=0,
-                 xtx=None, ytx=to_categorical, xmasks=None, num_samples=None, is_csv=True):
+                 xtx=None, ytx=to_categorical, xmasks=None, num_samples=None, is_csv=True,
+                 isTimeSeries=True):
         self.files = directory_or_fileiter
         self.ycolumns = ycolumns
         self.xcolumns = xcolumns
@@ -18,6 +21,7 @@ class TextConverter(object):
         self.xmasks = xmasks
         self.num_samples = num_samples
         self.is_csv = is_csv
+        self.isTimeSeries = isTimeSeries
 
     def convert(self):
         result = [None] * len(self.files)
@@ -27,11 +31,23 @@ class TextConverter(object):
                 result[idx] = np.genfromtxt(file, dtype=np.float32, delimiter=',', skip_header=self.skip_header)
         else:
             # parquet
-            for idx, file in enumerate(self.files):
-                table = pq.read_table(file)
-                # important to specify dtype explicitly to make sure tf can consume it
-                np_array = table.to_pandas().to_numpy(dtype=np.float32)
-                result[idx] = np_array
+            if self.isTimeSeries:
+                for idx, file in enumerate(self.files):
+                    table = pq.read_table(file)
+                    df = table.to_pandas()
+                    # a bit hacky for now
+                    df['label'] = df.apply(lambda row: 1.0 if row.TYPE == 'EBikeRide' else 0.0, axis=1)
+                    # Note that 'features' may contains varying length
+                    # feature_sequence = df['features'].to_numpy().tolist()
+                    # feature_np = np.array(sequence.pad_sequences(feature_sequence, maxlen=10), np.float32)
+                    # result.shape = (N, 2)
+                    result[idx] = df[['label', 'features']].to_numpy()
+            else:
+                for idx, file in enumerate(self.files):
+                    table = pq.read_table(file)
+                    # important to specify dtype explicitly to make sure tf can consume it
+                    np_array = table.to_pandas().to_numpy(dtype=np.float32)
+                    result[idx] = np_array
         result = np.concatenate(result)
         if self.shuffle:
             idx = np.random.permutation(result.shape[0])
@@ -46,17 +62,29 @@ class TextConverter(object):
             y = self.ytx(y)
         return X, y
 
+    # def make_x(self, np1):
+    #     result = np1[:, self.xcolumns]
+    #     if self.xmasks:
+    #         temp = [None] * len(self.xmasks)
+    #         for i, index in enumerate(self.xmasks):
+    #             temp[i] = np1[:, index]
+    #         result = np.transpose(temp)
+    #     return result
+
+    # hack
     def make_x(self, np1):
-        result = np1[:, self.xcolumns]
+        # note that np1[:, self.xcolumns] has shape of [N,] because each row is taken as an np array object
+        # use np.stack to cast it to 2d np array
+        result = np.stack(np1[:, self.xcolumns])
         if self.xmasks:
             temp = [None] * len(self.xmasks)
             for i, index in enumerate(self.xmasks):
-                temp[i] = np1[:, index]
+                temp[i] = result[:, index]
             result = np.transpose(temp)
         return result
 
     def make_y(self, np1):
-        temp = np1[:, self.ycolumns]
+        temp = np1[:, self.ycolumns].astype(np.float32)
         # temp is 1d array. convert to 2d 'vector'
         return np.reshape(temp, (temp.shape[0], 1))
 

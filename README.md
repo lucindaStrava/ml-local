@@ -12,4 +12,10 @@ If you use PyCharm for Python Dev (recommended), follow the instruction https://
 To run script in Jupyter Notebook
 
     jupyter notebook
+    jupyter notebook --ip=0.0.0.0   (Run within EC2 such that the port can be accessed externally)
 
+To show tensor board, go to the root directory that contains TensorFlow logs, within the virtual environment
+
+    tensorboard --logdir ./yourLogDirName
+
+    

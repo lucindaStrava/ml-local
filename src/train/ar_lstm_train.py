@@ -6,13 +6,14 @@ import keras.optimizers.Adam as Adam
 import keras.backend as K
 from keras import regularizers
 from keras.callbacks import ModelCheckpoint, History, ReduceLROnPlateau, TensorBoard
-from keras.layers import BatchNormalization, Input, Reshape, Dense, Conv1D, Dropout
-from keras.models import Model, load_model, Sequential
+from keras.layers import Reshape, Dense, Dropout, Permute
+from keras.models import load_model, Sequential
 from timeit import default_timer as timer
 from src.train.utils import build_numpy, build_generator, fetch_file_list
 
+from keras.layers import recurrent
 
-X_COLUMNS = slice(7, 85)
+X_COLUMNS = 1
 Y_COLUMNS = 0
 BATCH_SIZE = 128
 LR = 5e-4
@@ -24,72 +25,50 @@ NUM_VALI_SAMPLES = BATCH_SIZE * 2
 EPOCHS = 8
 np.random.seed(100)
 
-
-TRAINING_DATA_DIR = '/Users/lucindazhao/strava/ml-local/trainData/set1/'
-VALIDATION_DATA_DIR = '/Users/lucindazhao/strava/ml-local/valiData/set1/'
-TRAIN_PORTION = 0.45
-VALIDATION_PORTION = 30.0
-MODEL_CHECKPOINT = '/Users/lucindazhao/strava/ml-local/snapshots/'
+TRAINING_DATA_DIR = '/Users/lucindazhao/strava/ml-local/trainData/'
+VALIDATION_DATA_DIR = '/Users/lucindazhao/strava/ml-local/validationData/'
+TRAIN_PORTION = 1.1
+VALIDATION_PORTION = 1.1
+MODEL_CHECKPOINT = '/Users/lucindazhao/strava/ml-local/snapshots/v1/'
 LOG_DIR = '/Users/lucindazhao/strava/ml-local/logs/'
 IS_CSV = False
 
 
-def build_fc_network():
-    # build fully-connected network
-    l = Input(shape=(36,))
-    inputs = l
-    l = Dense(32, activation="relu", name='dense1', kernel_regularizer=regularizers.l2(0.01))(l)
-    l = BatchNormalization()(l)
-    l = Dropout(0.5)(l)
-    l = Dense(32, activation="relu", name='dense2', kernel_regularizer=regularizers.l2(0.01))(l)
-    l = BatchNormalization()(l)
-    l = Dropout(0.5)(l)
-    l = Dense(2, activation="softmax", name='main_output')(l)
-    # for lr in np.logspace(start=1, stop=-4, num=5, base=10.0):
-    m_fc = Model(inputs=inputs, outputs=l)
-    print(m_fc.summary())
-    return 'fc_lr=' + str(LR) + '_l2_dropout_2', m_fc
-
-
-def build_cnn_network():
+def build_lstm():
     # build CNN network
-    l = Input(shape=(36,))
-    inputs = l
-    l = Reshape((36, 1))(l)
-    for i in range(0, 3):
-        #  Output_size = input_size + 2 * padding_size-(filter_size-1)
-        l = Conv1D(16, 3, padding="same", activation="relu", name='conv' + str(i))(l)
-        l = BatchNormalization(name='batch' + str(i))(l)
-        l = Dropout(0.5)(l)
-    # 36  ->30 -> 24 -> 18
-    l = Conv1D(16, 7, padding="valid", activation="relu", strides=[1], name='conv_last3')(l)
-    l = Conv1D(16, 7, padding="valid", activation="relu", strides=[1], name='conv_last2')(l)
-    l = Conv1D(16, 7, padding="valid", activation="relu", strides=[1], name='conv_last1')(l)
-    l = BatchNormalization(name='batch_last')(l)
-    l = Dropout(0.5)(l)
-    l = Reshape((16 * 18,))(l)
-    l = Dense(16, activation="relu", name='fc')(l)
-    l = Dense(2, activation="softmax", name='main_output')(l)
+    # model definition
+    modelGraph = Sequential()
+    # make sure to define input layer
+    input1 = Input(shape=(None,))
+    # get N * 26 input matrix
+    reshape2 = Reshape((26, -1), name="reshape2")
 
-    m_cnn = Model(inputs=inputs, outputs=l)
-    print(m_cnn.summary())
-    return 'cnn_' + str(LR), m_cnn
+    # get 26 * N input matrix
+    transpose = Permute((2, 1), name="transpose")
+    layer1 = LSTM(units=100, return_sequences=True, name="lstm1")
+    layer2 = LSTM(units=100, return_sequences=False, name="lstm2")
+    dropout = Dropout(0.3, name="dropout")
+    dense_layer = Dense(units=2, activation="softmax", kernel_regularizer=regularizers.l2(1e-3))
+    modelGraph.add(input1)
+    modelGraph.add(reshape2)
+    modelGraph.add(transpose)
+    modelGraph.add(layer1)
+    modelGraph.add(layer2)
+    modelGraph.add(dropout)
+    modelGraph.add(dense_layer)
+
+    print(modelGraph.summary())
+    return 'lstm_' + str(LR), modelGraph
 
 
-def model_train(model_type='fc'):
+def model_train():
     """
     Use for fast iteration
     :param model_type:
     :return:
     """
     start = timer()
-    if model_type == 'fc':
-        model_pair = build_fc_network()
-    elif model_type == 'cnn':
-        model_pair = build_cnn_network()
-    else:
-        print("Type not supported")
-        return
+    model_pair = build_lstm()
     end = timer()
     print("{} min taken for generating networks".format((end - start) / 60.0))
 
@@ -187,13 +166,7 @@ def model_train_small(model_type='fc'):
     :return:
     """
     start = timer()
-    if model_type == 'fc':
-        model_pair = build_fc_network()
-    elif model_type == 'cnn':
-        model_pair = build_cnn_network()
-    else:
-        print("Type not supported")
-        return
+    model_pair = build_lstm()
     end = timer()
     print("{} min taken for generating networks".format((end - start) / 60.0))
 
